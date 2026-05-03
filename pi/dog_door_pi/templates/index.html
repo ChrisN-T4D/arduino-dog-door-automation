@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dog door</title>
+  <style>
+    :root { font-family: system-ui, sans-serif; background: #1a1b1e; color: #e8e8e8; }
+    body { max-width: 52rem; margin: 2rem auto; padding: 0 1rem; }
+    h1 { font-size: 1.35rem; }
+    .card { background: #25262b; border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 1rem; }
+    .ok { color: #8bd49c; }
+    .warn { color: #e8c070; }
+    .bad { color: #f08080; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    th, td { text-align: left; padding: 0.4rem 0.5rem; border-bottom: 1px solid #3d3f46; }
+    button, input[type="submit"] {
+      background: #3d5a80; color: #fff; border: none; padding: 0.45rem 0.85rem;
+      border-radius: 6px; cursor: pointer; font-size: 0.95rem;
+    }
+    button.secondary { background: #444; }
+    label { display: inline-block; margin-right: 0.35rem; font-size: 0.85rem; }
+    .row { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; }
+    code { background: #333; padding: 0.15rem 0.35rem; border-radius: 4px; font-size: 0.85rem; }
+    pre { background: #111; padding: 0.75rem; border-radius: 6px; overflow-x: auto; font-size: 0.75rem; max-height: 14rem; }
+    fieldset { border: 1px solid #444; border-radius: 6px; padding: 0.75rem; margin-top: 0.5rem; }
+    legend { padding: 0 0.35rem; font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+  <h1>Dog door</h1>
+  <p style="opacity:.75;font-size:.9rem;">Local time: {{ now }}</p>
+
+  <div class="card">
+    <h2 style="margin-top:0;font-size:1.05rem;">Status</h2>
+    <p>Door (from Arduino): <strong>{{ door_state }}</strong></p>
+    <p>Schedule allows RFID exit now:
+      {% if exit_allowed %}<span class="ok">yes</span>{% else %}<span class="bad">no</span>{% endif %}
+    </p>
+    <p>Serial to Arduino:
+      {% if serial_ok %}<span class="ok">connected</span> <code>{{ serial_port }}</code>
+      {% else %}<span class="warn">not connected</span> (check USB &amp; <code>DOG_DOOR_SERIAL</code>){% endif %}
+    </p>
+    <div class="row">
+      <form method="post" action="/action/open"><button type="submit">Open (remote)</button></form>
+      <form method="post" action="/action/close"><button type="submit" class="secondary">Close (remote)</button></form>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2 style="margin-top:0;font-size:1.05rem;">Schedule rules</h2>
+    <p style="font-size:.85rem;opacity:.85;">
+      <strong>Block</strong> = RFID exit denied during matching days/times.
+      If any <strong>allow</strong> rules exist, RFID exit is only allowed inside those windows (after blocks).
+    </p>
+    {% if rules %}
+    <table>
+      <thead><tr><th>ID</th><th>Label</th><th>Action</th><th>Days</th><th>Start</th><th>End</th><th></th></tr></thead>
+      <tbody>
+        {% for r in rules %}
+        <tr>
+          <td>{{ r.id }}</td>
+          <td>{{ r.label }}</td>
+          <td>{{ r.action }}</td>
+          <td>{{ r.days }}</td>
+          <td>{{ "%d:%02d"|format(r.start_minutes // 60, r.start_minutes % 60) }}</td>
+          <td>{{ "%d:%02d"|format(r.end_minutes // 60, r.end_minutes % 60) }}</td>
+          <td>
+            <form method="post" action="/rules/{{ r.id }}/delete" style="display:inline;">
+              <button type="submit" class="secondary">Delete</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p><em>No rules yet — RFID exits allowed by schedule unless you add blocks (or allow-only rules).</em></p>
+    {% endif %}
+
+    <form method="post" action="/rules/add">
+      <fieldset>
+        <legend>Add rule</legend>
+        <p>
+          <label>Label <input name="label" type="text" placeholder="Night" /></label>
+        </p>
+        <p>
+          <label>Action
+            <select name="action" required>
+              <option value="block">block (deny RFID in window)</option>
+              <option value="allow">allow (only permit RFID in window)</option>
+            </select>
+          </label>
+        </p>
+        <p>Days (week starts Monday)</p>
+        <div class="row">
+          {% for d in ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] %}
+          <label><input type="checkbox" name="day_{{ loop.index0 }}" value="on" /> {{ d }}</label>
+          {% endfor %}
+        </div>
+        <p class="row">
+          <label>Start <input name="start_time" type="time" required value="22:00" /></label>
+          <label>End <input name="end_time" type="time" required value="06:00" /></label>
+        </p>
+        <p><button type="submit">Add rule</button></p>
+      </fieldset>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2 style="margin-top:0;font-size:1.05rem;">Recent serial lines</h2>
+    {% if recent %}
+    <pre>{% for line in recent %}{{ line }}
+{% endfor %}</pre>
+    {% else %}<p><em>No lines yet.</em></p>{% endif %}
+  </div>
+</body>
+</html>

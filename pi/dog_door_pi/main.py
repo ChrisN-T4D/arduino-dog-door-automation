@@ -1,0 +1,210 @@
+"""FastAPI web UI + serial heartbeat + commands."""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+from collections import deque
+from datetime import datetime
+from pathlib import Path
+
+import serial
+from fastapi import Depends, FastAPI, Form, HTTPException, Request
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from fastapi.templating import Jinja2Templates
+from starlette.status import HTTP_303_SEE_OTHER
+
+from dog_door_pi import config
+from dog_door_pi.db import add_rule, delete_rule, init_db, list_rules
+from dog_door_pi.scheduler import exit_allowed_at
+from dog_door_pi.serial_client import SerialBridge
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+BASE_DIR = Path(__file__).resolve().parent
+templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+
+security = HTTPBasic(auto_error=False)
+
+app = FastAPI(title="Dog Door Pi", version="0.1.0")
+
+# Shared runtime (filled in lifespan)
+class AppRuntime:
+    bridge: SerialBridge | None = None
+    door_state: str = "unknown"
+    recent_lines: deque[str] = deque(maxlen=80)
+    serial_ok: bool = False
+
+
+runtime = AppRuntime()
+
+
+def _on_serial_line(line: str) -> None:
+    runtime.recent_lines.append(line)
+    if line.startswith("STATE:"):
+        runtime.door_state = line.split(":", 1)[1].strip()
+
+
+async def _heartbeat_loop() -> None:
+    while True:
+        try:
+            allowed = exit_allowed_at()
+            cmd = "EXIT_ALLOWED" if allowed else "EXIT_DENIED"
+            if runtime.bridge:
+                runtime.bridge.send_line(cmd)
+                logger.debug("Heartbeat: %s", cmd)
+        except Exception as e:
+            logger.warning("Heartbeat failed: %s", e)
+        await asyncio.sleep(config.HEARTBEAT_INTERVAL_SEC)
+
+
+def _require_auth(credentials: HTTPBasicCredentials | None = Depends(security)) -> None:
+    if credentials is None:
+        raise HTTPException(
+            status_code=401,
+            detail="Authentication required",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    if credentials.password != config.WEB_PASSWORD:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid password",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+
+
+@app.on_event("startup")
+async def startup() -> None:
+    init_db()
+    runtime.bridge = SerialBridge(
+        config.SERIAL_PORT,
+        config.SERIAL_BAUD,
+        on_line=_on_serial_line,
+    )
+    try:
+        runtime.bridge.open()
+        runtime.serial_ok = True
+        logger.info("Serial opened: %s", config.SERIAL_PORT)
+        # Prime Arduino heartbeat immediately
+        allowed = exit_allowed_at()
+        runtime.bridge.send_line("EXIT_ALLOWED" if allowed else "EXIT_DENIED")
+    except serial.SerialException as e:
+        logger.warning("Could not open serial (%s): %s", config.SERIAL_PORT, e)
+        runtime.serial_ok = False
+    asyncio.create_task(_heartbeat_loop())
+
+
+@app.on_event("shutdown")
+async def shutdown() -> None:
+    if runtime.bridge:
+        runtime.bridge.close()
+
+
+@app.get("/", response_class=HTMLResponse)
+async def index(request: Request, _: None = Depends(_require_auth)):
+    rules = list_rules()
+    exit_ok = exit_allowed_at()
+    return templates.TemplateResponse(
+        "index.html",
+        {
+            "request": request,
+            "door_state": runtime.door_state,
+            "exit_allowed": exit_ok,
+            "serial_ok": runtime.serial_ok,
+            "serial_port": config.SERIAL_PORT,
+            "rules": rules,
+            "recent": list(runtime.recent_lines),
+            "now": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        },
+    )
+
+
+@app.get("/api/status")
+async def api_status(_: None = Depends(_require_auth)):
+    return JSONResponse(
+        {
+            "door_state": runtime.door_state,
+            "exit_allowed_schedule": exit_allowed_at(),
+            "serial_ok": runtime.serial_ok,
+            "serial_port": config.SERIAL_PORT,
+            "time": datetime.now().isoformat(timespec="seconds"),
+        }
+    )
+
+
+@app.post("/action/open")
+async def action_open(_: None = Depends(_require_auth)):
+    if runtime.bridge and runtime.serial_ok:
+        runtime.bridge.send_line("CMD_OPEN")
+    return RedirectResponse("/", status_code=HTTP_303_SEE_OTHER)
+
+
+@app.post("/action/close")
+async def action_close(_: None = Depends(_require_auth)):
+    if runtime.bridge and runtime.serial_ok:
+        runtime.bridge.send_line("CMD_CLOSE")
+    return RedirectResponse("/", status_code=HTTP_303_SEE_OTHER)
+
+
+def _time_to_minutes(t: str) -> int:
+    parts = t.strip().split(":")
+    if len(parts) != 2:
+        raise ValueError("bad time")
+    h, m = int(parts[0]), int(parts[1])
+    return max(0, min(1439, h * 60 + m))
+
+
+@app.post("/rules/add")
+async def rules_add(
+    _: None = Depends(_require_auth),
+    label: str = Form(""),
+    action: str = Form(...),
+    start_time: str = Form(...),
+    end_time: str = Form(...),
+    day_0: str | None = Form(None),
+    day_1: str | None = Form(None),
+    day_2: str | None = Form(None),
+    day_3: str | None = Form(None),
+    day_4: str | None = Form(None),
+    day_5: str | None = Form(None),
+    day_6: str | None = Form(None),
+):
+    if action not in ("allow", "block"):
+        raise HTTPException(400, "invalid action")
+    days_list = []
+    for i, v in enumerate([day_0, day_1, day_2, day_3, day_4, day_5, day_6]):
+        if v == "on":
+            days_list.append(str(i))
+    if not days_list:
+        raise HTTPException(400, "select at least one day")
+    days_csv = ",".join(days_list)
+    try:
+        sm = _time_to_minutes(start_time)
+        em = _time_to_minutes(end_time)
+    except ValueError:
+        raise HTTPException(400, "invalid time format (use HH:MM)")
+    add_rule(label.strip(), action, days_csv, sm, em)
+    return RedirectResponse("/", status_code=HTTP_303_SEE_OTHER)
+
+
+@app.post("/rules/{rule_id}/delete")
+async def rules_delete(rule_id: int, _: None = Depends(_require_auth)):
+    delete_rule(rule_id)
+    return RedirectResponse("/", status_code=HTTP_303_SEE_OTHER)
+
+
+def run() -> None:
+    import uvicorn
+
+    uvicorn.run(
+        "dog_door_pi.main:app",
+        host=config.HTTP_HOST,
+        port=config.HTTP_PORT,
+        reload=False,
+    )
+
+
+if __name__ == "__main__":
+    run()
