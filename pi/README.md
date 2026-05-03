@@ -209,10 +209,20 @@ Overnight windows are supported (e.g. start **22:00**, end **06:00**).
 
 ---
 
+## Security (read this)
+
+- **Set `DOG_DOOR_PASSWORD`** in `pi/.env` to a **strong, unique** value (never commit `.env`). The app **refuses to start** if the password is missing, too short (under 10 characters), or a common default—unless **`DOG_DOOR_DEVELOPMENT=1`** (dev only: relaxes rules, enables `/docs`, can allow empty password with a warning).
+- **HTTP Basic** sends the password **base64** (not encrypted). Treat as **LAN-only**; for remote access use **VPN / Tailscale** or **HTTPS** on a reverse proxy, not raw port-forward to **8080** on the public internet.
+- The dashboard **“Recent serial lines”** can show Arduino output including **`TAG:`** (RFID ids). Don’t expose the UI beyond people you trust.
+- **OpenAPI `/docs`** is **disabled** by default; enable only in dev with **`DOG_DOOR_DEVELOPMENT=1`**.
+
+---
+
 ## Troubleshooting
 
 | Issue | What to check |
 |--------|----------------|
+| App exits: password error | Set **`DOG_DOOR_PASSWORD`** (10+ chars) or use **`DOG_DOOR_DEVELOPMENT=1`** only for local testing. |
 | No `/dev/ttyACM0` | Cable, Uno power, `lsusb`, driver on Pi |
 | Permission denied on serial | User in **dialout**, re-login |
 | Web works but door ignores schedule | Uno `REQUIRE_PI_HEARTBEAT` **1** and heartbeat \< 35 s |
@@ -229,8 +239,9 @@ python -m venv .venv
 .\.venv\Scripts\activate
 pip install -r requirements.txt
 $env:DOG_DOOR_SERIAL="COM3"
-$env:DOG_DOOR_PASSWORD="test"
+$env:DOG_DOOR_PASSWORD="your-dev-password-here"
+$env:DOG_DOOR_DEVELOPMENT="1"
 uvicorn dog_door_pi.main:app --host 127.0.0.1 --port 8080
 ```
 
-Use the correct **COM** port for the Uno in Device Manager.
+Use the correct **COM** port for the Uno in Device Manager. **`DOG_DOOR_DEVELOPMENT=1`** relaxes password rules for local testing only.

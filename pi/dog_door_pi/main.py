@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import secrets
 from collections import deque
 from datetime import datetime
 from pathlib import Path
@@ -28,7 +29,14 @@ templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 security = HTTPBasic(auto_error=False)
 
-app = FastAPI(title="Dog Door Pi", version="0.1.0")
+def _fastapi_kwargs():
+    base = {"title": "Dog Door Pi", "version": "0.1.0"}
+    if not config.DEVELOPMENT:
+        base.update({"docs_url": None, "redoc_url": None, "openapi_url": None})
+    return base
+
+
+app = FastAPI(**_fastapi_kwargs())
 
 # Shared runtime (filled in lifespan)
 class AppRuntime:
@@ -60,6 +68,20 @@ async def _heartbeat_loop() -> None:
         await asyncio.sleep(config.HEARTBEAT_INTERVAL_SEC)
 
 
+def _password_matches(provided: str, expected: str) -> bool:
+    """Timing-safe comparison for HTTP Basic password."""
+    if not expected.strip():
+        # Only allowed when validate_web_config permitted empty PW (DOG_DOOR_DEVELOPMENT=1).
+        return config.DEVELOPMENT
+    try:
+        return secrets.compare_digest(
+            provided.encode("utf-8"),
+            expected.strip().encode("utf-8"),
+        )
+    except Exception:
+        return False
+
+
 def _require_auth(credentials: HTTPBasicCredentials | None = Depends(security)) -> None:
     if credentials is None:
         raise HTTPException(
@@ -67,7 +89,7 @@ def _require_auth(credentials: HTTPBasicCredentials | None = Depends(security)) 
             detail="Authentication required",
             headers={"WWW-Authenticate": "Basic"},
         )
-    if credentials.password != config.WEB_PASSWORD:
+    if not _password_matches(credentials.password, config.WEB_PASSWORD.strip()):
         raise HTTPException(
             status_code=401,
             detail="Invalid password",
@@ -77,6 +99,7 @@ def _require_auth(credentials: HTTPBasicCredentials | None = Depends(security)) 
 
 @app.on_event("startup")
 async def startup() -> None:
+    config.validate_web_config()
     init_db()
     runtime.bridge = SerialBridge(
         config.SERIAL_PORT,
