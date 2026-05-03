@@ -43,6 +43,9 @@ static const int PIN_MOTOR_LEN = 12;
 static const int RDM6300_FRAME_LEN = 14;
 SoftwareSerial RfidSerial(PIN_RFID_RX, PIN_RFID_TX);
 
+/** Set to 1 to print RFID:CHK_FAIL + raw 14 bytes (rate-limited) when a frame parses but checksum fails — use to debug wiring/protocol. */
+#define RFID_DEBUG_BAD_FRAMES 0
+
 static uint8_t rfidBuf[RDM6300_FRAME_LEN];
 static int rfidBufIndex = 0;
 
@@ -305,6 +308,20 @@ static void pollRfid() {
         Serial.print("TAG:");
         Serial.println(tagId, HEX);
         tryStartFromAuthorizedRfid(tagId);
+      } else {
+#if RFID_DEBUG_BAD_FRAMES
+        static unsigned long lastChkFailMs = 0;
+        unsigned long t = millis();
+        if ((t - lastChkFailMs) >= 3000) {
+          lastChkFailMs = t;
+          Serial.print(F("RFID:CHK_FAIL "));
+          for (int i = 0; i < RDM6300_FRAME_LEN; i++) {
+            if (rfidBuf[i] < 0x10) Serial.print('0');
+            Serial.print(rfidBuf[i], HEX);
+            Serial.print(i < RDM6300_FRAME_LEN - 1 ? ' ' : '\n');
+          }
+        }
+#endif
       }
 
       rfidBufIndex = 0;

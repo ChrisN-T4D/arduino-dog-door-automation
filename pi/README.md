@@ -228,6 +228,7 @@ Overnight windows are supported (e.g. start **22:00**, end **06:00**).
 | Permission denied on serial | User in **dialout**, re-login |
 | Web works but door ignores schedule | Uno `REQUIRE_PI_HEARTBEAT` **1** and heartbeat \< 35 s |
 | Always denied | Rules too strict; delete rules in UI or DB |
+| No **`TAG:`** lines on Recent serial | RDM6300 **TX → Uno D2**, **GND+5V**, **125 kHz EM4100** tags (not 13.56 MHz). Antenna snapped onto reader. **`sudo systemctl stop dog-door`** then **`arduino-cli monitor -p /dev/ttyACM0 -c baudrate=9600`** and scan a tag — you should see **`STATE:`**, **`BOOT:`**, and **`TAG:`** once wiring works. Sketch `RFID_DEBUG_BAD_FRAMES` → **`1`** if you see **`RFID:CHK_FAIL`** (garbled/corrupt vs dead reader). |
 
 ---
 
