@@ -50,8 +50,8 @@ static uint8_t rfidBuf[RDM6300_FRAME_LEN];
 static int rfidBufIndex = 0;
 
 /**
- * Whitelist: 32-bit IDs printed as `TAG:xxxxxxxx` in hex (after checksum passes).
- * Scan each collar tag once, read Serial Monitor, then add the hex value here.
+ * Whitelist: IDs from `TAG:` / `DENY:tag=` lines (exactly 8 hex digits, uppercase).
+ * Example: TAG:004D6CAA → put  0x004D6CAA  here (leading zeros matter).
  */
 static const uint32_t AUTHORIZED_TAGS[] = {
     0xDEADBEEF,  // replace with your tag ID(s)
@@ -78,6 +78,13 @@ static unsigned long lastPiMessageMs = 0;
 // -----------------------------------------------------------------------------
 // Helpers
 // -----------------------------------------------------------------------------
+static void serialPrintUint32Hex8(uint32_t id) {
+  const char digits[] = "0123456789ABCDEF";
+  for (int shift = 28; shift >= 0; shift -= 4) {
+    Serial.print(digits[(id >> (unsigned)shift) & 0xFU]);
+  }
+}
+
 static int hexNibble(char c) {
   if (c >= '0' && c <= '9') return c - '0';
   if (c >= 'A' && c <= 'F') return 10 + (c - 'A');
@@ -221,7 +228,8 @@ static void tryStartFromAuthorizedRfid(uint32_t tagId) {
   if (phase != PHASE_CLOSED_IDLE) return;
   if (!isTagAuthorized(tagId)) {
     Serial.print("DENY:tag=");
-    Serial.println(tagId, HEX);
+    serialPrintUint32Hex8(tagId);
+    Serial.println();
     return;
   }
   if (!rfidExitAllowedNow()) {
@@ -306,7 +314,8 @@ static void pollRfid() {
 
       if (ok) {
         Serial.print("TAG:");
-        Serial.println(tagId, HEX);
+        serialPrintUint32Hex8(tagId);
+        Serial.println();
         tryStartFromAuthorizedRfid(tagId);
       } else {
 #if RFID_DEBUG_BAD_FRAMES
