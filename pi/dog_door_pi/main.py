@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import secrets
+import threading
 from collections import deque
 from datetime import datetime
 from pathlib import Path
@@ -47,12 +49,33 @@ class AppRuntime:
 
 
 runtime = AppRuntime()
+_runtime_lock = threading.Lock()
+
+# Arduino sends STATE:CLOSED | MOVING_CLOSED | MOVING_OPEN | OPEN (see dog_door.ino).
+_STATE_RE = re.compile(r"^\s*STATE:\s*(\S+)", re.IGNORECASE)
+
+_STATE_LABELS = {
+    "CLOSED": "Closed",
+    "MOVING_CLOSED": "Closing",
+    "MOVING_OPEN": "Opening",
+    "OPEN": "Open",
+    "unknown": "Unknown",
+}
+
+
+def _door_state_label(raw: str) -> str:
+    key = (raw or "").strip().upper()
+    return _STATE_LABELS.get(key, raw or "unknown")
 
 
 def _on_serial_line(line: str) -> None:
-    runtime.recent_lines.append(line)
-    if line.startswith("STATE:"):
-        runtime.door_state = line.split(":", 1)[1].strip()
+    with _runtime_lock:
+        runtime.recent_lines.append(line)
+        m = _STATE_RE.match(line.strip())
+        if m:
+            raw = m.group(1).upper()
+            runtime.door_state = raw
+            logger.debug("Arduino STATE -> %s", raw)
 
 
 async def _heartbeat_loop() -> None:
@@ -129,17 +152,21 @@ async def shutdown() -> None:
 async def index(request: Request, _: None = Depends(_require_auth)):
     rules = list_rules()
     exit_ok = exit_allowed_at()
+    with _runtime_lock:
+        door_raw = runtime.door_state
+        recent = list(runtime.recent_lines)
     # Starlette 0.40+ expects (request, name, context); older two-arg form breaks Jinja.
     return templates.TemplateResponse(
         request,
         "index.html",
         {
-            "door_state": runtime.door_state,
+            "door_state": door_raw,
+            "door_state_label": _door_state_label(door_raw),
             "exit_allowed": exit_ok,
             "serial_ok": runtime.serial_ok,
             "serial_port": config.SERIAL_PORT,
             "rules": rules,
-            "recent": list(runtime.recent_lines),
+            "recent": recent,
             "now": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         },
     )
@@ -147,9 +174,12 @@ async def index(request: Request, _: None = Depends(_require_auth)):
 
 @app.get("/api/status")
 async def api_status(_: None = Depends(_require_auth)):
+    with _runtime_lock:
+        door_raw = runtime.door_state
     return JSONResponse(
         {
-            "door_state": runtime.door_state,
+            "door_state": door_raw,
+            "door_state_label": _door_state_label(door_raw),
             "exit_allowed_schedule": exit_allowed_at(),
             "serial_ok": runtime.serial_ok,
             "serial_port": config.SERIAL_PORT,

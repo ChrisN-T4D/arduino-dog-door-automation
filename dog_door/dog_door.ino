@@ -145,17 +145,18 @@ static void motorStop() {
 }
 
 static void motorDriveOpen() {
-  digitalWrite(PIN_MOTOR_RPWM, HIGH);
-  digitalWrite(PIN_MOTOR_LPWM, LOW);
-}
-
-static void motorDriveClose() {
   digitalWrite(PIN_MOTOR_RPWM, LOW);
   digitalWrite(PIN_MOTOR_LPWM, HIGH);
 }
 
+static void motorDriveClose() {
+  digitalWrite(PIN_MOTOR_RPWM, HIGH);
+  digitalWrite(PIN_MOTOR_LPWM, LOW);
+}
+
 static void reportState(const char* stateLine) {
   Serial.println(stateLine);
+  Serial.flush();  // Ensure full line reaches Pi before RFID/other serial work
 }
 
 static void beginOpeningSequence() {

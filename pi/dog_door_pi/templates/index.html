@@ -33,7 +33,8 @@
 
   <div class="card">
     <h2 style="margin-top:0;font-size:1.05rem;">Status</h2>
-    <p>Door (from Arduino): <strong>{{ door_state }}</strong></p>
+    <p>Door (from Arduino): <strong>{{ door_state_label }}</strong>
+      <span style="opacity:.65;font-size:.85rem;">({{ door_state }})</span></p>
     <p>Schedule allows RFID exit now:
       {% if exit_allowed %}<span class="ok">yes</span>{% else %}<span class="bad">no</span>{% endif %}
     </p>
