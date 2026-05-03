@@ -50,8 +50,8 @@ static uint8_t rfidBuf[RDM6300_FRAME_LEN];
 static int rfidBufIndex = 0;
 
 /**
- * Whitelist: IDs from `TAG:` / `DENY:tag=` lines (exactly 8 hex digits, uppercase).
- * Example: TAG:004D6CAA → put  0x004D6CAA  here (leading zeros matter).
+ * Whitelist: use the 8-digit ID from `TAG:` (not TAGFULL). Leading zeros matter.
+ * Example: TAG:000015C9 TAGFULL:00000015C9 → use  0x000015C9  here.
  */
 static const uint32_t AUTHORIZED_TAGS[] = {
     0xDEADBEEF,  // replace with your tag ID(s)
@@ -85,6 +85,15 @@ static void serialPrintUint32Hex8(uint32_t id) {
   }
 }
 
+/** All 5 EM4100 payload bytes as 10 hex digits (matches many keyfob printouts). */
+static void serialPrint5BytesHex10(const uint8_t b[5]) {
+  const char d[] = "0123456789ABCDEF";
+  for (int i = 0; i < 5; i++) {
+    Serial.print(d[(b[i] >> 4) & 0xF]);
+    Serial.print(d[b[i] & 0xF]);
+  }
+}
+
 static int hexNibble(char c) {
   if (c >= '0' && c <= '9') return c - '0';
   if (c >= 'A' && c <= 'F') return 10 + (c - 'A');
@@ -102,10 +111,10 @@ static bool parseHexByte(char hi, char lo, uint8_t* out) {
 
 /**
  * RDM6300 frame: 0x02 + 10 ASCII hex chars + 2 ASCII hex checksum + 0x03.
- * 10 data chars = 5 bytes; checksum = XOR of those 5 bytes.
- * Tag ID = 8 ASCII hex chars (buf[3..10]) as 32-bit value (common EM4100 readout).
+ * checksum = XOR of five payload bytes (EM4100).
+ * Whitelist uint32 uses last four payload bytes (typical UID); TAGFULL prints all ten hex digits.
  */
-static bool parseRdm6300Frame(const uint8_t* buf, uint32_t* outTagId) {
+static bool parseRdm6300Frame(const uint8_t* buf, uint32_t* outTagId, uint8_t outPayload5[5]) {
   if (buf[0] != 0x02 || buf[13] != 0x03) return false;
 
   uint8_t dataBytes[5];
@@ -121,12 +130,11 @@ static bool parseRdm6300Frame(const uint8_t* buf, uint32_t* outTagId) {
   if (!parseHexByte((char)buf[11], (char)buf[12], &checksumFromFrame)) return false;
   if (xorSum != checksumFromFrame) return false;
 
-  uint32_t id = 0;
-  for (int i = 0; i < 8; i++) {
-    int n = hexNibble((char)buf[3 + i]);
-    if (n < 0) return false;
-    id = (id << 4) | (uint32_t)n;
-  }
+  for (int i = 0; i < 5; i++) outPayload5[i] = dataBytes[i];
+
+  uint32_t id =
+      ((uint32_t)dataBytes[1] << 24) | ((uint32_t)dataBytes[2] << 16)
+      | ((uint32_t)dataBytes[3] << 8) | (uint32_t)dataBytes[4];
   *outTagId = id;
   return true;
 }
@@ -224,11 +232,13 @@ static void pollDoorMachine() {
   }
 }
 
-static void tryStartFromAuthorizedRfid(uint32_t tagId) {
+static void tryStartFromAuthorizedRfid(uint32_t tagId, const uint8_t payload5[5]) {
   if (phase != PHASE_CLOSED_IDLE) return;
   if (!isTagAuthorized(tagId)) {
-    Serial.print("DENY:tag=");
+    Serial.print(F("DENY:tag="));
     serialPrintUint32Hex8(tagId);
+    Serial.print(F(" TAGFULL:"));
+    serialPrint5BytesHex10(payload5);
     Serial.println();
     return;
   }
@@ -310,13 +320,16 @@ static void pollRfid() {
 
     if (rfidBufIndex >= RDM6300_FRAME_LEN) {
       uint32_t tagId = 0;
-      bool ok = parseRdm6300Frame(rfidBuf, &tagId);
+      uint8_t payload5[5];
+      bool ok = parseRdm6300Frame(rfidBuf, &tagId, payload5);
 
       if (ok) {
-        Serial.print("TAG:");
+        Serial.print(F("TAG:"));
         serialPrintUint32Hex8(tagId);
+        Serial.print(F(" TAGFULL:"));
+        serialPrint5BytesHex10(payload5);
         Serial.println();
-        tryStartFromAuthorizedRfid(tagId);
+        tryStartFromAuthorizedRfid(tagId, payload5);
       } else {
 #if RFID_DEBUG_BAD_FRAMES
         static unsigned long lastChkFailMs = 0;
