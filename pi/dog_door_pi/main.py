@@ -176,6 +176,7 @@ async def index(request: Request, _: None = Depends(_require_auth)):
 async def api_status(_: None = Depends(_require_auth)):
     with _runtime_lock:
         door_raw = runtime.door_state
+        recent = list(runtime.recent_lines)
     return JSONResponse(
         {
             "door_state": door_raw,
@@ -183,6 +184,7 @@ async def api_status(_: None = Depends(_require_auth)):
             "exit_allowed_schedule": exit_allowed_at(),
             "serial_ok": runtime.serial_ok,
             "serial_port": config.SERIAL_PORT,
+            "recent_lines": recent,
             "time": datetime.now().isoformat(timespec="seconds"),
         }
     )

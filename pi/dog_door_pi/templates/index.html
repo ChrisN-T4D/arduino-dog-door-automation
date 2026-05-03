@@ -29,18 +29,18 @@
 </head>
 <body>
   <h1>Dog door</h1>
-  <p style="opacity:.75;font-size:.9rem;">Local time: {{ now }}</p>
+  <p style="opacity:.75;font-size:.9rem;">Local time: <span id="lbl-now">{{ now }}</span></p>
 
   <div class="card">
     <h2 style="margin-top:0;font-size:1.05rem;">Status</h2>
-    <p>Door (from Arduino): <strong>{{ door_state_label }}</strong>
-      <span style="opacity:.65;font-size:.85rem;">({{ door_state }})</span></p>
+    <p>Door (from Arduino): <strong id="lbl-door">{{ door_state_label }}</strong>
+      <span id="lbl-door-raw" style="opacity:.65;font-size:.85rem;">({{ door_state }})</span></p>
     <p>Schedule allows RFID exit now:
-      {% if exit_allowed %}<span class="ok">yes</span>{% else %}<span class="bad">no</span>{% endif %}
+      <span id="lbl-exit">{% if exit_allowed %}<span class="ok">yes</span>{% else %}<span class="bad">no</span>{% endif %}</span>
     </p>
     <p>Serial to Arduino:
-      {% if serial_ok %}<span class="ok">connected</span> <code>{{ serial_port }}</code>
-      {% else %}<span class="warn">not connected</span> (check USB &amp; <code>DOG_DOOR_SERIAL</code>){% endif %}
+      <span id="lbl-serial">{% if serial_ok %}<span class="ok">connected</span> <code>{{ serial_port }}</code>
+      {% else %}<span class="warn">not connected</span> (check USB &amp; <code>DOG_DOOR_SERIAL</code>){% endif %}</span>
     </p>
     <div class="row">
       <form method="post" action="/action/open"><button type="submit">Open (remote)</button></form>
@@ -110,10 +110,51 @@
 
   <div class="card">
     <h2 style="margin-top:0;font-size:1.05rem;">Recent serial lines</h2>
-    {% if recent %}
-    <pre>{% for line in recent %}{{ line }}
-{% endfor %}</pre>
-    {% else %}<p><em>No lines yet.</em></p>{% endif %}
+    <p style="opacity:.65;font-size:.8rem;margin:0 0 .5rem;">Live refresh every 2&nbsp;s (same data as GET &quot;/&quot;, no reload needed).</p>
+    <pre id="pre-recent">{% if recent %}{% for line in recent %}{{ line }}
+{% endfor %}{% else %}<em>No lines yet.</em>{% endif %}</pre>
   </div>
+  <script>
+(function () {
+  const pre = document.getElementById('pre-recent');
+  async function poll() {
+    try {
+      const res = await fetch('/api/status', {
+        credentials: 'same-origin',
+        headers: { Accept: 'application/json' },
+      });
+      if (!res.ok) return;
+      const j = await res.json();
+
+      document.getElementById('lbl-door').textContent = j.door_state_label || '';
+      document.getElementById('lbl-door-raw').textContent = '(' + (j.door_state || 'unknown') + ')';
+
+      const exitEl = document.getElementById('lbl-exit');
+      exitEl.innerHTML = j.exit_allowed_schedule
+        ? '<span class="ok">yes</span>'
+        : '<span class="bad">no</span>';
+
+      const serialPort = j.serial_port || '';
+      const serialEl = document.getElementById('lbl-serial');
+      serialEl.innerHTML = j.serial_ok
+        ? '<span class="ok">connected</span> <code>' + serialPort + '</code>'
+        : '<span class="warn">not connected</span> (check USB &amp; <code>DOG_DOOR_SERIAL</code>)';
+
+      if (j.time) {
+        document.getElementById('lbl-now').textContent = j.time.replace('T', ' ');
+      }
+
+      const lines = j.recent_lines || [];
+      if (lines.length) {
+        pre.textContent = lines.join('\n');
+      } else {
+        pre.innerHTML = '<em>No lines yet.</em>';
+      }
+    } catch (e) { /* ignore transient errors */ }
+  }
+  setInterval(poll, 2000);
+  poll();
+})();
+  </script>
 </body>
 </html>
