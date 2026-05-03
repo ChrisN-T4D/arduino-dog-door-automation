@@ -129,10 +129,11 @@ async def shutdown() -> None:
 async def index(request: Request, _: None = Depends(_require_auth)):
     rules = list_rules()
     exit_ok = exit_allowed_at()
+    # Starlette 0.40+ expects (request, name, context); older two-arg form breaks Jinja.
     return templates.TemplateResponse(
+        request,
         "index.html",
         {
-            "request": request,
             "door_state": runtime.door_state,
             "exit_allowed": exit_ok,
             "serial_ok": runtime.serial_ok,
