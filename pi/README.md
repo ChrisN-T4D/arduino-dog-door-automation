@@ -124,8 +124,9 @@ Important:
 
 - **`DOG_DOOR_PASSWORD`** — web login password (HTTP Basic).
 - **`DOG_DOOR_SERIAL`** — usually **`/dev/ttyACM0`** for Arduino Uno over USB; some adapters show **`/dev/ttyUSB0`**. Run `ls /dev/ttyACM* /dev/ttyUSB* 2>/dev/null` with the Uno plugged in.
+- **systemd `EnvironmentFile=`** only accepts lines like **`KEY=value`**. Do **not** use **`export KEY=value`** in `.env` or systemd will ignore every line and the app will exit with “Set `DOG_DOOR_PASSWORD`”.
 
-Load before starting:
+Load before starting (manual run; `set -a` exports variables for the child process):
 
 ```bash
 set -a && source .env && set +a
