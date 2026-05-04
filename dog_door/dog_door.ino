@@ -51,7 +51,7 @@ SoftwareSerial RfidSerial(PIN_RFID_RX, PIN_RFID_TX);
  * Insecure — any passer-by with an EM4100-style fob can trigger the door. Set 0 for production.
  * Pi schedule (EXIT_ALLOWED) and REQUIRE_PI_HEARTBEAT still apply when enabled.
  */
-#define RFID_ACCEPT_ANY_VALID_TAG 0
+#define RFID_ACCEPT_ANY_VALID_TAG 1
 
 static uint8_t rfidBuf[RDM6300_FRAME_LEN];
 static int rfidBufIndex = 0;
