@@ -46,6 +46,13 @@ SoftwareSerial RfidSerial(PIN_RFID_RX, PIN_RFID_TX);
 /** Set to 1 to print RFID:CHK_FAIL + raw 14 bytes (rate-limited) when a frame parses but checksum fails — use to debug wiring/protocol. */
 #define RFID_DEBUG_BAD_FRAMES 0
 
+/**
+ * Temporary / bench: 1 = any checksum-valid 125 kHz tag opens (AUTHORIZED_TAGS ignored).
+ * Insecure — any passer-by with an EM4100-style fob can trigger the door. Set 0 for production.
+ * Pi schedule (EXIT_ALLOWED) and REQUIRE_PI_HEARTBEAT still apply when enabled.
+ */
+#define RFID_ACCEPT_ANY_VALID_TAG 0
+
 static uint8_t rfidBuf[RDM6300_FRAME_LEN];
 static int rfidBufIndex = 0;
 
@@ -234,6 +241,11 @@ static void pollDoorMachine() {
 
 static void tryStartFromAuthorizedRfid(uint32_t tagId, const uint8_t payload5[5]) {
   if (phase != PHASE_CLOSED_IDLE) return;
+
+#if RFID_ACCEPT_ANY_VALID_TAG
+  (void)tagId;
+  (void)payload5;
+#else
   if (!isTagAuthorized(tagId)) {
     Serial.print(F("DENY:tag="));
     serialPrintUint32Hex8(tagId);
@@ -242,10 +254,16 @@ static void tryStartFromAuthorizedRfid(uint32_t tagId, const uint8_t payload5[5]
     Serial.println();
     return;
   }
+#endif
+
   if (!rfidExitAllowedNow()) {
     Serial.println("DENY:policy");
     return;
   }
+
+#if RFID_ACCEPT_ANY_VALID_TAG
+  Serial.println(F("ALLOW:any_valid_tag"));
+#endif
   beginOpeningSequence();
 }
 
