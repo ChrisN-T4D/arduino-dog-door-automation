@@ -1,6 +1,10 @@
-# Merge this into Home Assistant's configuration.yaml (under your HA /config volume).
+# Option A — automated (same volume as homeassistant in this repo compose):
+#   docker compose --profile fix-proxy-config run --rm ha-proxy-merge
+#
+# Option B — manual: merge below into Home Assistant configuration.yaml (/config volume).
+#
 # Fixes: "A request from a reverse proxy was received ... HTTP integration is not set-up for reverse proxies"
-# After editing: Settings → System → Restart, or restart the homeassistant container.
+# Then restart Home Assistant (UI or docker restart homeassistant).
 #
 # Docs: https://www.home-assistant.io/integrations/http/#reverse-proxies
 

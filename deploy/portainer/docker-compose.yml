@@ -38,6 +38,29 @@ services:
     networks:
       - dog_door_ha
 
+  # One-shot: merge reverse-proxy settings into /config/configuration.yaml (fixes Traefik forwarded errors).
+  # From the host in this directory: docker compose --profile fix-proxy-config run --rm ha-proxy-merge
+  # Same HA_CONFIG_PATH bind as homeassistant. Then restart the homeassistant container.
+  ha-proxy-merge:
+    profiles:
+      - fix-proxy-config
+    image: mikefarah/yq:4
+    user: "0:0"
+    volumes:
+      - ${HA_CONFIG_PATH:-ha_config}:/config
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        f=/config/configuration.yaml
+        if [ ! -f "$$f" ]; then
+          echo "ERROR: $$f not found. Start Home Assistant once, then run this again."
+          exit 1
+        fi
+        yq -i '.http.use_x_forwarded_for = true' "$$f"
+        yq -i '.http.trusted_proxies = ["127.0.0.1", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]' "$$f"
+        echo "OK: merged http.use_x_forwarded_for and http.trusted_proxies"
+
   # Enable with Portainer env COMPOSE_PROFILES=eufy (or docker compose --profile eufy up -d)
   eufy-security-ws:
     profiles:

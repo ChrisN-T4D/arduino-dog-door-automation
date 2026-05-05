@@ -23,6 +23,16 @@ Copy from **[`homeassistant-http-reverse-proxy-snippet.yaml`](homeassistant-http
 
 Then **restart** Home Assistant. See [Home Assistant HTTP / reverse proxies](https://www.home-assistant.io/integrations/http/#reverse-proxies).
 
+**Automated merge (recommended):** on the Docker host, from the folder that contains **`docker-compose.yml`**, run (uses the **`yq`** helper in the compose file — same **`HA_CONFIG_PATH`** volume as HA):
+
+```bash
+docker compose --profile fix-proxy-config run --rm ha-proxy-merge
+```
+
+Then **restart** the **`homeassistant`** container.
+
+In **Portainer:** duplicate stack → **Replicas / editor** isn’t ideal for one-shots; use the host SSH shell above, or **Add container** → image **`mikefarah/yq:4`** → bind the same **`/config`** volume → **Console** → run the two `yq -i …` commands from [`homeassistant-http-reverse-proxy-snippet.yaml`](homeassistant-http-reverse-proxy-snippet.yaml) against **`/config/configuration.yaml`**.
+
 The **`rich` … `SyntaxWarning`** line in logs is a Python 3.14 dependency warning and is unrelated to Traefik.
 
 ## Eufy in Home Assistant
