@@ -1,10 +1,12 @@
 /**
- * Dog door — ELEGOO Uno R3 + BTS7960 + host over USB serial (e.g. Raspberry Pi or Home Assistant).
+ * Dog door — ELEGOO Uno R3 + BTS7960 + host serial:
+ * - USB Serial (Pi / debug / Arduino IDE monitor).
+ * - SoftwareSerial on D8 RX / D7 TX — ESP32 UART (9600); TX optional if one-way-only.
  *
- * Opens only on explicit host commands (CMD_OPEN). Policy, mmWave (ESP32 + LD2410C), and
- * schedules live in Home Assistant; the Pi app (optional) forwards CMD_OPEN over USB.
+ * Opens only on explicit host commands (CMD_OPEN). Policy / mmWave / schedules live off-board.
  */
 
+#include <SoftwareSerial.h>
 #include <string.h>
 
 // -----------------------------------------------------------------------------
@@ -22,6 +24,16 @@ static const int PIN_MOTOR_RPWM = 9;
 static const int PIN_MOTOR_LPWM = 10;
 static const int PIN_MOTOR_REN = 11;
 static const int PIN_MOTOR_LEN = 12;
+
+/**
+ * ESP32 (or Pi-level shifter host): HardwareSerial-equivalent pins on Uno.
+ * ESP TX2 (pin 28) → Uno D8 RX. ESP RX2 ← Uno D7 TX only via 3.3 V-safe path (level shifter).
+ */
+static const int PIN_ESP_HOST_RX = 8;
+/** TX line; leave disconnected for one-way receive-only until level shifter is installed. */
+static const int PIN_ESP_HOST_TX = 7;
+
+SoftwareSerial EspHostSerial(PIN_ESP_HOST_RX, PIN_ESP_HOST_TX);
 
 // -----------------------------------------------------------------------------
 // Door state
@@ -54,6 +66,7 @@ static void motorDriveClose() {
   digitalWrite(PIN_MOTOR_LPWM, LOW);
 }
 
+/** Door state announcements to USB Serial only (avoid driving ESP RX without shifter). */
 static void reportState(const char* stateLine) {
   Serial.println(stateLine);
   Serial.flush();
@@ -115,56 +128,76 @@ static void pollDoorMachine() {
 }
 
 // -----------------------------------------------------------------------------
-// USB serial: newline-delimited commands from host
+// Host serial: newline-delimited commands (USB + ESP on D8)
 // -----------------------------------------------------------------------------
-static char serialLineBuf[48];
-static uint8_t serialLineLen = 0;
-
-static void handleSerialLine(char* line) {
+static void handleSerialLine(char* line, Print& ackOut) {
   if (strcmp(line, "CMD_OPEN") == 0) {
     if (phase == PHASE_CLOSED_IDLE) {
       beginOpeningSequence();
-      Serial.println("ACK:CMD_OPEN");
+      ackOut.println("ACK:CMD_OPEN");
     } else {
-      Serial.println("ERR:busy");
+      ackOut.println("ERR:busy");
     }
     return;
   }
   if (strcmp(line, "CMD_CLOSE") == 0) {
     if (phase == PHASE_OPENING || phase == PHASE_OPEN_HELD) {
       beginClosingSequence();
-      Serial.println("ACK:CMD_CLOSE");
+      ackOut.println("ACK:CMD_CLOSE");
     } else if (phase == PHASE_CLOSING) {
-      Serial.println("ERR:already_closing");
+      ackOut.println("ERR:already_closing");
     } else {
-      Serial.println("ACK:already_closed");
+      ackOut.println("ACK:already_closed");
     }
     return;
   }
   if (strcmp(line, "PING") == 0) {
-    Serial.println("PONG");
+    ackOut.println("PONG");
     return;
   }
 }
 
-static void pollHostSerial() {
+static char usbLineBuf[48];
+static uint8_t usbLineLen = 0;
+
+static void pollUsbSerial() {
   while (Serial.available()) {
     char c = (char)Serial.read();
     if (c == '\r') continue;
     if (c == '\n') {
-      serialLineBuf[serialLineLen] = '\0';
-      if (serialLineLen > 0) handleSerialLine(serialLineBuf);
-      serialLineLen = 0;
-    } else if (serialLineLen < sizeof(serialLineBuf) - 1) {
-      serialLineBuf[serialLineLen++] = c;
+      usbLineBuf[usbLineLen] = '\0';
+      if (usbLineLen > 0) handleSerialLine(usbLineBuf, Serial);
+      usbLineLen = 0;
+    } else if (usbLineLen < sizeof(usbLineBuf) - 1) {
+      usbLineBuf[usbLineLen++] = c;
     } else {
-      serialLineLen = 0;
+      usbLineLen = 0;
+    }
+  }
+}
+
+static char espLineBuf[48];
+static uint8_t espLineLen = 0;
+
+static void pollEspHostSerial() {
+  while (EspHostSerial.available()) {
+    char c = (char)EspHostSerial.read();
+    if (c == '\r') continue;
+    if (c == '\n') {
+      espLineBuf[espLineLen] = '\0';
+      if (espLineLen > 0) handleSerialLine(espLineBuf, EspHostSerial);
+      espLineLen = 0;
+    } else if (espLineLen < sizeof(espLineBuf) - 1) {
+      espLineBuf[espLineLen++] = c;
+    } else {
+      espLineLen = 0;
     }
   }
 }
 
 void setup() {
   Serial.begin(9600);
+  EspHostSerial.begin(9600);
 
   pinMode(PIN_MOTOR_RPWM, OUTPUT);
   pinMode(PIN_MOTOR_LPWM, OUTPUT);
@@ -176,10 +209,11 @@ void setup() {
 
   phase = PHASE_CLOSED_IDLE;
   reportState("STATE:CLOSED");
-  Serial.println(F("BOOT:dog_door host_serial"));
+  Serial.println(F("BOOT:dog_door usb_serial+esp_d8rx"));
 }
 
 void loop() {
-  pollHostSerial();
+  pollUsbSerial();
+  pollEspHostSerial();
   pollDoorMachine();
 }
