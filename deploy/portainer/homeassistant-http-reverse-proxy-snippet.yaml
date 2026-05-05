@@ -1,0 +1,17 @@
+# Merge this into Home Assistant's configuration.yaml (under your HA /config volume).
+# Fixes: "A request from a reverse proxy was received ... HTTP integration is not set-up for reverse proxies"
+# After editing: Settings → System → Restart, or restart the homeassistant container.
+#
+# Docs: https://www.home-assistant.io/integrations/http/#reverse-proxies
+
+http:
+  use_x_forwarded_for: true
+  trusted_proxies:
+    # Typical Docker internal ranges (Traefik lives on a bridge like 172.21.x.x)
+    - 127.0.0.1
+    - 10.0.0.0/8
+    - 172.16.0.0/12
+    - 192.168.0.0/16
+  # Optional: set URLs to your public Traefik hostname (example)
+  # external_url: https://ha.example.com
+  # internal_url: http://homeassistant:8123

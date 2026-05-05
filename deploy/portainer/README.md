@@ -11,6 +11,20 @@ Use this folder as a **Git-type stack** in Portainer (point the stack at this re
 
 WebSockets for the HA UI should work through Traefik’s HTTP router to port **8123**.
 
+### Reverse proxy error in logs (`trusted_proxies`)
+
+If you see:
+
+`A request from a reverse proxy was received from …, but your HTTP integration is not set-up for reverse proxies`
+
+Traefik (e.g. **`172.21.0.x`**) is forwarding `X-Forwarded-For` while Home Assistant still distrusts those headers. Add an **`http:`** block to **`configuration.yaml`** in your HA config directory (the host path behind **`HA_CONFIG_PATH`**).
+
+Copy from **[`homeassistant-http-reverse-proxy-snippet.yaml`](homeassistant-http-reverse-proxy-snippet.yaml)** (merge with any existing **`http:`** keys—do not duplicate the top-level **`http:`** key). The **`172.16.0.0/12`** range covers common Docker bridge subnets including **`172.21.0.3`**.
+
+Then **restart** Home Assistant. See [Home Assistant HTTP / reverse proxies](https://www.home-assistant.io/integrations/http/#reverse-proxies).
+
+The **`rich` … `SyntaxWarning`** line in logs is a Python 3.14 dependency warning and is unrelated to Traefik.
+
 ## Eufy in Home Assistant
 
 Install **[HACS](https://hacs.xyz/)**, then the **[Eufy Security](https://github.com/fuatakgun/eufy_security)** integration. Configure the WebSocket URL to reach **`eufy-security-ws:3000`** from the HA container (Docker DNS hostname **`eufy-security-ws`**).
