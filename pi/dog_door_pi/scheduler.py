@@ -1,4 +1,4 @@
-"""Evaluate whether RFID exits are allowed at the current local time."""
+"""Evaluate schedule windows at the current local time (reference for UI / Home Assistant migration)."""
 
 from __future__ import annotations
 

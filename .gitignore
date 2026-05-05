@@ -12,6 +12,9 @@ build/
 pi/data/
 **/.env
 
+# ESPHome
+esphome/secrets.yaml
+
 # IDE / OS
 .cursor/
 .vscode/

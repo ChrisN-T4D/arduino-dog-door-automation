@@ -1,0 +1,70 @@
+# ESPHome: ESP32 + HiLink LD2410C mmWave → Home Assistant.
+# Copy secrets.yaml.example → secrets.yaml and run: esphome compile dog_door_mmwave.yaml
+#
+# Wiring (typical; adjust pins to your board):
+#   LD2410C TX → ESP32 GPIO16 (UART RX)
+#   LD2410C RX → ESP32 GPIO17 (UART TX)
+#   GND common; LD2410C is 3.3 V logic.
+# Baud is commonly 115200 for LD2410C (see HiLink docs / ESPHome ld2410c).
+
+substitutions:
+  name: dog-door-mm
+  friendly_name: Dog door mmWave
+
+esphome:
+  name: ${name}
+  friendly_name: ${friendly_name}
+  min_version: "2024.6.0"
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+
+logger:
+
+api:
+  encryption:
+    key: !secret api_encryption_key
+
+ota:
+  - platform: esphome
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+captive_portal:
+
+uart:
+  id: uart_ld2410c
+  tx_pin: GPIO17
+  rx_pin: GPIO16
+  baud_rate: 115200
+
+ld2410c:
+  id: ld2410c_radar
+  uart_id: uart_ld2410c
+
+binary_sensor:
+  - platform: ld2410c
+    has_target:
+      name: "mmWave target"
+    has_moving_target:
+      name: "mmWave moving"
+    has_still_target:
+      name: "mmWave still"
+
+# Pi-less option: second UART to Arduino Uno (9600 8N1, newline commands). Uncomment and wire.
+# uart:
+#   id: uart_uno
+#   tx_pin: GPIOXX
+#   rx_pin: GPIOYY
+#   baud_rate: 9600
+# button:
+#   - platform: template
+#     name: "Dog door open"
+#     on_press:
+#       - uart.write:
+#           id: uart_uno
+#           data: "CMD_OPEN\n"

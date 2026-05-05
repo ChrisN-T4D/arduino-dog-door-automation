@@ -3,13 +3,13 @@
 Python **FastAPI** app that:
 
 - Opens **USB serial** to the Arduino Uno (`/dev/ttyACM0` or `/dev/ttyUSB0`).
-- Sends **`EXIT_ALLOWED` / `EXIT_DENIED`** on a timer (must stay **under ~35 s** to match the Uno heartbeat timeout when `REQUIRE_PI_HEARTBEAT` is `1`).
-- Serves a small **web UI** (HTTP Basic auth): door status, remote open/close, schedule rules (block / allow windows).
+- Sends **`CMD_OPEN`** / **`CMD_CLOSE`** when you use the web UI or when **Home Assistant** calls **`POST /action/open`** (e.g. `rest_command`).
+- Serves a small **web UI** (HTTP Basic auth): door status, remote open/close, optional SQLite **schedule rules** (reference for migration to Home Assistant).
 - Stores rules in **SQLite** under `pi/data/dog_door.db`.
 
-**Pi setup** below includes **Arduino CLI** so you can **compile and upload** `dog_door.ino` from the Pi over USB (e.g. after `git pull`) without a separate PC.
+The Uno firmware no longer uses RFID or Pi heartbeats: the door opens **only** on explicit **`CMD_OPEN`**. Policy (time windows, mmWave, Eufy) belongs in **Home Assistant**.
 
-Production Arduino: set **`REQUIRE_PI_HEARTBEAT`** to **`1`** in `dog_door/dog_door.ino` so RFID is denied if the Pi or serial link is down.
+**Pi setup** below includes **Arduino CLI** so you can **compile and upload** `dog_door.ino` from the Pi over USB (e.g. after `git pull`) without a separate PC.
 
 ---
 
@@ -162,7 +162,7 @@ Open a browser: **`http://<pi-ip>:8080`** — the browser will ask for **HTTP Ba
 - **Username:** anything (e.g. `pi`)
 - **Password:** value of **`DOG_DOOR_PASSWORD`**
 
-Use **Open / Close** and confirm the Uno Serial behavior matches. Add **schedule rules** as needed.
+Use **Open / Close** and confirm the Uno serial protocol (`ACK:CMD_OPEN`, `STATE:*`). Add **schedule rules** only if you still use this DB as a reference.
 
 Stop with **Ctrl+C**.
 
@@ -202,9 +202,11 @@ journalctl -u dog-door -f
 
 ## Schedule logic (short)
 
-- **Block** rules: if the current day/time falls inside any block → **EXIT_DENIED** for that heartbeat.
-- **Allow** rules: if **any** allow rule exists, RFID exits are only permitted when the current time matches **at least one** allow window (and no block hit).
-- **No rules:** schedule does not block (still subject to future defaults you add).
+SQLite rules drive the **`exit_allowed_schedule`** field in **`GET /api/status`** and the dashboard line “within schedule window”. They **do not** block **`CMD_OPEN`** from the web UI or from Home Assistant — migrate real gating to HA automations.
+
+- **Block** rules: matching windows mark the schedule as “not allowed” in that evaluation.
+- **Allow** rules: if **any** allow rule exists, the schedule is “allowed” only inside at least one allow window (after blocks).
+- **No allow rules:** after blocks, the schedule evaluates as allowed unless blocked.
 
 Overnight windows are supported (e.g. start **22:00**, end **06:00**).
 
@@ -214,7 +216,7 @@ Overnight windows are supported (e.g. start **22:00**, end **06:00**).
 
 - **Set `DOG_DOOR_PASSWORD`** in `pi/.env` to a **strong, unique** value (never commit `.env`). The app **refuses to start** if the password is missing, too short (under 10 characters), or a common default—unless **`DOG_DOOR_DEVELOPMENT=1`** (dev only: relaxes rules, enables `/docs`, can allow empty password with a warning).
 - **HTTP Basic** sends the password **base64** (not encrypted). Treat as **LAN-only**; for remote access use **VPN / Tailscale** or **HTTPS** on a reverse proxy, not raw port-forward to **8080** on the public internet.
-- The dashboard **“Recent serial lines”** can show Arduino output including **`TAG:`** (RFID ids). Don’t expose the UI beyond people you trust.
+- The dashboard **“Recent serial lines”** shows Arduino `STATE:` / `BOOT:` lines. Don’t expose the UI beyond people you trust.
 - **OpenAPI `/docs`** is **disabled** by default; enable only in dev with **`DOG_DOOR_DEVELOPMENT=1`**.
 
 ---
@@ -226,9 +228,8 @@ Overnight windows are supported (e.g. start **22:00**, end **06:00**).
 | App exits: password error | Set **`DOG_DOOR_PASSWORD`** (10+ chars) or use **`DOG_DOOR_DEVELOPMENT=1`** only for local testing. |
 | No `/dev/ttyACM0` | Cable, Uno power, `lsusb`, driver on Pi |
 | Permission denied on serial | User in **dialout**, re-login |
-| Web works but door ignores schedule | Uno `REQUIRE_PI_HEARTBEAT` **1** and heartbeat \< 35 s |
-| Always denied | Rules too strict; delete rules in UI or DB |
-| No **`TAG:`** lines on Recent serial | RDM6300 **TX → Uno D2**, **GND+5V**, **125 kHz EM4100** tags (not 13.56 MHz). Antenna snapped onto reader. **`sudo systemctl stop dog-door`** then **`arduino-cli monitor -p /dev/ttyACM0 -c baudrate=9600`** and scan a tag — you should see **`STATE:`**, **`BOOT:`**, and **`TAG:`** once wiring works. Sketch `RFID_DEBUG_BAD_FRAMES` → **`1`** if you see **`RFID:CHK_FAIL`** (garbled/corrupt vs dead reader). |
+| Web works but door does not move | Uno powered, motor wiring, **`arduino-cli monitor`** on serial — send **`PING`** → **`PONG`**, **`CMD_OPEN`** when idle → **`ACK:CMD_OPEN`**. |
+| HA cannot open door | Pi reachable from HA container (Tailscale/LAN), **`rest_command`** URL and Basic auth correct, **`serial_ok`** true in **`/api/status`**. |
 
 ---
 

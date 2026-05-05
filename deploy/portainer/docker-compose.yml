@@ -1,0 +1,69 @@
+# Stack for Portainer: Home Assistant + internal MQTT + Eufy Security WebSocket bridge.
+# 1) Create host directories for volumes (or set bind paths in .env / Portainer env).
+# 2) Add environment variables in Portainer (see .env.example).
+# 3) Traefik: create external network `traefik_proxy`, set TRAEFIK_DOMAIN_SUFFIX (and optional HA_SUBDOMAIN).
+
+services:
+  homeassistant:
+    image: ghcr.io/home-assistant/home-assistant:stable
+    container_name: homeassistant
+    restart: unless-stopped
+    privileged: true
+    environment:
+      TZ: ${TZ:-UTC}
+    volumes:
+      - ${HA_CONFIG_PATH:-ha_config}:/config
+      - /etc/localtime:/etc/localtime:ro
+    networks:
+      - dog_door_ha
+      - traefik_proxy
+    labels:
+      traefik.enable: true
+      traefik.docker.network: traefik_proxy
+      traefik.http.routers.homeassistant.entrypoints: websecure
+      # Traefik expects: Host(`fqdn`) — backticks wrap the hostname (compose expands env vars inside).
+      traefik.http.routers.homeassistant.rule: "Host(`${HA_SUBDOMAIN:-ha}.${TRAEFIK_DOMAIN_SUFFIX}`)"
+      traefik.http.routers.homeassistant.tls.certresolver: ${TRAEFIK_CERT_RESOLVER:-le}
+      traefik.http.routers.homeassistant.service: homeassistant
+      traefik.http.services.homeassistant.loadbalancer.server.port: "8123"
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: mosquitto
+    restart: unless-stopped
+    volumes:
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_log:/mosquitto/log
+      - ./mosquitto/config:/mosquitto/config:ro
+    networks:
+      - dog_door_ha
+
+  # Enable with Portainer env COMPOSE_PROFILES=eufy (or docker compose --profile eufy up -d)
+  eufy-security-ws:
+    profiles:
+      - eufy
+    image: bropat/eufy-security-ws:latest
+    container_name: eufy-security-ws
+    restart: unless-stopped
+    environment:
+      USERNAME: ${EUFY_USERNAME}
+      PASSWORD: ${EUFY_PASSWORD}
+      COUNTRY: ${EUFY_COUNTRY:-US}
+      PORT: "3000"
+      LANGUAGE: ${EUFY_LANGUAGE:-en}
+    volumes:
+      - eufy_ws_data:/data
+    networks:
+      - dog_door_ha
+
+networks:
+  dog_door_ha:
+    driver: bridge
+  traefik_proxy:
+    external: true
+
+volumes:
+  ha_config:
+  mosquitto_data:
+  mosquitto_log:
+  eufy_ws_data:

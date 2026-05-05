@@ -1,8 +1,7 @@
-"""FastAPI web UI + serial heartbeat + commands."""
+"""FastAPI web UI + USB serial commands to the Arduino."""
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import re
 import secrets
@@ -31,6 +30,7 @@ templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 security = HTTPBasic(auto_error=False)
 
+
 def _fastapi_kwargs():
     base = {"title": "Dog Door Pi", "version": "0.1.0"}
     if not config.DEVELOPMENT:
@@ -39,6 +39,7 @@ def _fastapi_kwargs():
 
 
 app = FastAPI(**_fastapi_kwargs())
+
 
 # Shared runtime (filled in lifespan)
 class AppRuntime:
@@ -76,19 +77,6 @@ def _on_serial_line(line: str) -> None:
             raw = m.group(1).upper()
             runtime.door_state = raw
             logger.debug("Arduino STATE -> %s", raw)
-
-
-async def _heartbeat_loop() -> None:
-    while True:
-        try:
-            allowed = exit_allowed_at()
-            cmd = "EXIT_ALLOWED" if allowed else "EXIT_DENIED"
-            if runtime.bridge:
-                runtime.bridge.send_line(cmd)
-                logger.debug("Heartbeat: %s", cmd)
-        except Exception as e:
-            logger.warning("Heartbeat failed: %s", e)
-        await asyncio.sleep(config.HEARTBEAT_INTERVAL_SEC)
 
 
 def _password_matches(provided: str, expected: str) -> bool:
@@ -133,13 +121,9 @@ async def startup() -> None:
         runtime.bridge.open()
         runtime.serial_ok = True
         logger.info("Serial opened: %s", config.SERIAL_PORT)
-        # Prime Arduino heartbeat immediately
-        allowed = exit_allowed_at()
-        runtime.bridge.send_line("EXIT_ALLOWED" if allowed else "EXIT_DENIED")
     except serial.SerialException as e:
         logger.warning("Could not open serial (%s): %s", config.SERIAL_PORT, e)
         runtime.serial_ok = False
-    asyncio.create_task(_heartbeat_loop())
 
 
 @app.on_event("shutdown")

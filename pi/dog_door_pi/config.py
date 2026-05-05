@@ -16,9 +16,6 @@ def _env(key: str, default: str | None = None) -> str | None:
 SERIAL_PORT = _env("DOG_DOOR_SERIAL", "/dev/ttyACM0")
 SERIAL_BAUD = int(_env("DOG_DOOR_BAUD", "9600") or "9600")
 
-# Heartbeat to Arduino (must be < Uno HEARTBEAT_TIMEOUT_MS / 1000, typically 35s)
-HEARTBEAT_INTERVAL_SEC = float(_env("DOG_DOOR_HEARTBEAT_SEC", "25") or "25")
-
 # Web / auth — no default password; see validate_web_config()
 HTTP_HOST = _env("DOG_DOOR_HTTP_HOST", "0.0.0.0")
 HTTP_PORT = int(_env("DOG_DOOR_HTTP_PORT", "8080") or "8080")
