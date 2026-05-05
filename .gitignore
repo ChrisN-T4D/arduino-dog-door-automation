@@ -12,7 +12,7 @@ build/
 pi/data/
 **/.env
 
-# ESPHome
+# ESPHome — real keys / Wi-Fi live here; do not push to GitHub (example file is not ignored)
 esphome/secrets.yaml
 
 # IDE / OS
