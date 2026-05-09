@@ -6,8 +6,10 @@ Use this folder as a **Git-type stack** in Portainer (point the stack at this re
 
 1. **Host paths**: Set **`HA_CONFIG_PATH`** in the stack environment to an absolute path on the server (example: `/srv/homeassistant`). If unset, Compose uses the named volume **`ha_config`** (data lives in Docker’s volume store).
 2. **Traefik**: Create the external network once if it does not exist: **`docker network create traefik_proxy`**. Set **`TRAEFIK_DOMAIN_SUFFIX`** to your public DNS zone (the part after the hostname, e.g. `example.com`). The router hostname is **`${HA_SUBDOMAIN:-ha}.${TRAEFIK_DOMAIN_SUFFIX}`** (default subdomain `ha`). Match **`TRAEFIK_CERT_RESOLVER`** to your ACME resolver name (default **`le`**). Home Assistant’s **`configuration.yaml`** should set **`http`** external URL to the same HTTPS URL Traefik serves.
-3. **Eufy (optional)**: Set stack env **`COMPOSE_PROFILES=eufy`**, then **`EUFY_USERNAME`** and **`EUFY_PASSWORD`**. The **`eufy-security-ws`** service listens on port **3000** inside **`dog_door_ha`**. Without the profile, Home Assistant and Mosquitto still start. For local station discovery, upstream docs prefer **`network_mode: host`** on that image; many installs still work via cloud—see [eufy-security-ws Docker](https://github.com/bropat/eufy-security-ws/blob/master/docs/docker.md).
-4. **MQTT**: Home Assistant → **Settings → Devices & Services → Add integration → MQTT**. Broker: **`mosquitto`**, port **1883**, no TLS (internal network only). Tighten **`mosquitto.conf`** before exposing the broker.
+3. **Frigate (optional)**: Set **`COMPOSE_PROFILES=frigate`**. Beside `docker-compose.yml`, create **`frigate/`** with **`config.yml`** (copy **`frigate/config.yml.example`** → **`config.yml`**, fill RTSP URLs for Eufy or other NAS/RTSP cameras; track **`dog`** and **`person`**). **`config.yml`** enables MQTT to **`mosquitto`** (`topic_prefix: frigate`) so the **HACS Frigate** integration can subscribe to entity topics. Restart the stack profile. HA → **Devices & Services** → **Frigate** integration → **`http://frigate:5000`** (Docker DNS hostname on **`dog_door_ha`**). Complete step **5** so HA’s **MQTT** integration uses the same broker.
+
+4. **Dog door HA logic (schedules + mmWave + Frigate)**: Copy **`homeassistant-packages/dog_door_frigate_schedules.yaml`** into your HA **`/config/packages/`** (see **`HA_CONFIG_PATH`** on the Docker host). Add **`packages: !include_dir_merge_named packages/`** under **`homeassistant:`** in **`configuration.yaml`**. Helpers include two **Schedule** entities: blocks automations entirely vs “open without needing Frigate dog.” See **`homeassistant-packages/README.md`**.
+5. **MQTT**: Home Assistant → **Devices & Services → MQTT**. Broker **`mosquitto`**, port **1883**. Tighten **`mosquitto.conf`** before exposing the broker.
 
 WebSockets for the HA UI should work through Traefik’s HTTP router to port **8123**.
 
@@ -35,10 +37,8 @@ In **Portainer:** duplicate stack → **Replicas / editor** isn’t ideal for on
 
 The **`rich` … `SyntaxWarning`** line in logs is a Python 3.14 dependency warning and is unrelated to Traefik.
 
-## Eufy in Home Assistant
-
-Install **[HACS](https://hacs.xyz/)**, then the **[Eufy Security](https://github.com/fuatakgun/eufy_security)** integration. Configure the WebSocket URL to reach **`eufy-security-ws:3000`** from the HA container (Docker DNS hostname **`eufy-security-ws`**).
-
 ## Dog door automation
 
-From HA, call your Raspberry Pi (or other bridge) with **`rest_command`** → **`POST https://…/action/open`** with HTTP Basic auth, **or** drive an ESPHome **`uart.write`** if you use the Pi-less path. Do not expose **`/action/open`** on the public internet.
+From HA, trigger the ESP **`button`** “Dog door open” (**`dog_door_uno_bridge.yaml`**) or Pi **`POST /action/open`** (see **`pi/README.md`**). Do not expose unconditional open URLs on the public internet.
+
+**Stacks without a Git checkout:** Compose bind **`./frigate:/config`** resolves next to **`docker-compose.yml`**. Ensure that folder exists on the host Portainer mounts for the stack path.

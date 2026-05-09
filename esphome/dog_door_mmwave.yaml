@@ -5,7 +5,13 @@
 #   LD2410C TX → ESP32 GPIO16 (UART RX)
 #   LD2410C RX → ESP32 GPIO17 (UART TX)
 #   GND common; LD2410C is 3.3 V logic.
-# Baud is commonly 115200 for LD2410C (see HiLink docs / ESPHome ld2410c).
+# UART must match radar firmware: 256000 (HLK default). Use ld2410 baud_rate select only if you
+# reflash UART baud to match — wrong baud bricks UART until reverted; prefer config YAML baud only.
+#
+# Mount / zones (tune thresholds + max gates + detection_distance in HA):
+#   Aim radar boresight at the approach area (floor path). Over-window: lintel mount looking down often
+#   maps "near glass" vs "deeper room" to gates. Clear line to zone (blinds/metal mesh attenuate).
+#   Glass: prefer seeing into the room vs relying on penetration.
 
 substitutions:
   name: dog-door-mm
@@ -17,6 +23,7 @@ esphome:
   min_version: "2024.6.0"
 
 esp32:
+  variant: esp32
   board: esp32dev
   framework:
     type: esp-idf
@@ -37,17 +44,17 @@ wifi:
 captive_portal:
 
 uart:
-  id: uart_ld2410c
+  id: uart_ld2410
   tx_pin: GPIO17
   rx_pin: GPIO16
-  baud_rate: 115200
+  baud_rate: 256000
 
-ld2410c:
-  id: ld2410c_radar
-  uart_id: uart_ld2410c
+ld2410:
+  id: ld2410_radar
+  uart_id: uart_ld2410
 
 binary_sensor:
-  - platform: ld2410c
+  - platform: ld2410
     has_target:
       name: "mmWave target"
     has_moving_target:
@@ -55,16 +62,160 @@ binary_sensor:
     has_still_target:
       name: "mmWave still"
 
-# Pi-less option: second UART to Arduino Uno (9600 8N1, newline commands). Uncomment and wire.
-# uart:
-#   id: uart_uno
-#   tx_pin: GPIOXX
-#   rx_pin: GPIOYY
-#   baud_rate: 9600
-# button:
-#   - platform: template
-#     name: "Dog door open"
-#     on_press:
-#       - uart.write:
-#           id: uart_uno
-#           data: "CMD_OPEN\n"
+sensor:
+  - platform: ld2410
+    moving_distance:
+      name: "mmWave moving distance"
+    still_distance:
+      name: "mmWave still distance"
+    moving_energy:
+      name: "mmWave move energy"
+    still_energy:
+      name: "mmWave still energy"
+    detection_distance:
+      name: "mmWave detection distance"
+    g0:
+      move_energy:
+        name: "mmWave G0 move energy"
+      still_energy:
+        name: "mmWave G0 still energy"
+    g1:
+      move_energy:
+        name: "mmWave G1 move energy"
+      still_energy:
+        name: "mmWave G1 still energy"
+    g2:
+      move_energy:
+        name: "mmWave G2 move energy"
+      still_energy:
+        name: "mmWave G2 still energy"
+    g3:
+      move_energy:
+        name: "mmWave G3 move energy"
+      still_energy:
+        name: "mmWave G3 still energy"
+    g4:
+      move_energy:
+        name: "mmWave G4 move energy"
+      still_energy:
+        name: "mmWave G4 still energy"
+    g5:
+      move_energy:
+        name: "mmWave G5 move energy"
+      still_energy:
+        name: "mmWave G5 still energy"
+    g6:
+      move_energy:
+        name: "mmWave G6 move energy"
+      still_energy:
+        name: "mmWave G6 still energy"
+    g7:
+      move_energy:
+        name: "mmWave G7 move energy"
+      still_energy:
+        name: "mmWave G7 still energy"
+    g8:
+      move_energy:
+        name: "mmWave G8 move energy"
+      still_energy:
+        name: "mmWave G8 still energy"
+  - platform: wifi_signal
+    name: "mmWave WiFi signal"
+    update_interval: 60s
+    entity_category: diagnostic
+  - platform: uptime
+    name: "mmWave uptime"
+    entity_category: diagnostic
+
+number:
+  - platform: ld2410
+    timeout:
+      name: "mmWave timeout"
+    light_threshold:
+      name: "mmWave light threshold"
+    max_move_distance_gate:
+      name: "mmWave max move distance gate"
+    max_still_distance_gate:
+      name: "mmWave max still distance gate"
+    g0:
+      move_threshold:
+        name: "mmWave G0 move threshold"
+      still_threshold:
+        name: "mmWave G0 still threshold"
+    g1:
+      move_threshold:
+        name: "mmWave G1 move threshold"
+      still_threshold:
+        name: "mmWave G1 still threshold"
+    g2:
+      move_threshold:
+        name: "mmWave G2 move threshold"
+      still_threshold:
+        name: "mmWave G2 still threshold"
+    g3:
+      move_threshold:
+        name: "mmWave G3 move threshold"
+      still_threshold:
+        name: "mmWave G3 still threshold"
+    g4:
+      move_threshold:
+        name: "mmWave G4 move threshold"
+      still_threshold:
+        name: "mmWave G4 still threshold"
+    g5:
+      move_threshold:
+        name: "mmWave G5 move threshold"
+      still_threshold:
+        name: "mmWave G5 still threshold"
+    g6:
+      move_threshold:
+        name: "mmWave G6 move threshold"
+      still_threshold:
+        name: "mmWave G6 still threshold"
+    g7:
+      move_threshold:
+        name: "mmWave G7 move threshold"
+      still_threshold:
+        name: "mmWave G7 still threshold"
+    g8:
+      move_threshold:
+        name: "mmWave G8 move threshold"
+      still_threshold:
+        name: "mmWave G8 still threshold"
+
+select:
+  - platform: ld2410
+    distance_resolution:
+      name: "mmWave distance resolution"
+    light_function:
+      name: "mmWave light function"
+    out_pin_level:
+      name: "mmWave out pin level"
+
+switch:
+  - platform: ld2410
+    engineering_mode:
+      name: "mmWave engineering mode"
+    bluetooth:
+      name: "mmWave bluetooth"
+  - platform: restart
+    name: "mmWave restart"
+    entity_category: config
+
+button:
+  - platform: ld2410
+    factory_reset:
+      name: "mmWave factory reset"
+    restart:
+      name: "mmWave radar restart"
+    query_params:
+      name: "mmWave query params"
+
+text_sensor:
+  - platform: ld2410
+    version:
+      name: "mmWave firmware version"
+    mac_address:
+      name: "mmWave MAC address"
+
+# Separate ESP wired to Uno: dog_door_uno_bridge.yaml. Outdoor: dog_door_mmwave_outdoor.yaml

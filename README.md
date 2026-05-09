@@ -2,16 +2,16 @@
 
 |Ecosystem| Path | Purpose|
 |-----------|------|--------|
-| **Arduino (ELEGOO Uno)** | [`dog_door/`](dog_door/) | Firmware: BTS7960 motor, USB serial host commands (`CMD_OPEN` / `CMD_CLOSE`). Main sketch: [`dog_door/dog_door.ino`](dog_door/dog_door.ino). |
+| **Arduino (ELEGOO Uno)** | [`dog_door/`](dog_door/) | Firmware: BTS7960 motor; USB/UART lines: `CMD_OPEN` / `CMD_CLOSE` / `PING` / `GET_STATE` / `SET_*_MS=` (timings in EEPROM). Sketch: [`dog_door/dog_door.ino`](dog_door/dog_door.ino). |
 | **Raspberry Pi (optional)** | [`pi/`](pi/) | FastAPI app: USB serial bridge + web UI + SQLite schedule reference. Setup: [`pi/README.md`](pi/README.md). |
-| **ESP32 + LD2410C** | [`esphome/`](esphome/) | ESPHome mmWave presence for Home Assistant. See [`esphome/dog_door_mmwave.yaml`](esphome/dog_door_mmwave.yaml). |
-| **Home Assistant (Docker)** | [`deploy/portainer/`](deploy/portainer/) | Example Compose for Portainer: HA, MQTT (optional), Eufy Security WS bridge. |
+| **ESP32 + LD2410C** | [`esphome/`](esphome/) | ESPHome mmWave (distance, gate tuning, engineering mode) + [`esphome/dog_door_uno_bridge.yaml`](esphome/dog_door_uno_bridge.yaml) for Uno UART. |
+| **Home Assistant (Docker)** | [`deploy/portainer/`](deploy/portainer/) | Example Compose for Portainer: HA, MQTT (optional), Frigate (RTSP dog/person detection). See [`deploy/portainer/homeassistant-packages/`](deploy/portainer/homeassistant-packages/). |
 
 ## Architecture (target)
 
 - **Detection**: LD2410C on ESP32 → Home Assistant (ESPHome or MQTT).
-- **Coordination**: Home Assistant automations (schedules, Eufy cameras, cooldowns) call either the Pi **`POST /action/open`** or an ESPHome **`uart.write`** to the Uno (Pi-less path).
-- **Actuation**: Uno runs the door motor; opens only on **`CMD_OPEN`** from USB serial (Pi) or future UART from ESP32.
+- **Coordination**: Home Assistant automations (schedules, Frigate RTSP/NAS streams, cooldowns, mmWave) trigger the ESP bridge **`button`** or Pi **`POST /action/open`**.
+- **Actuation**: Uno runs the door motor; opens only on **`CMD_OPEN`** from USB serial (Pi) or UART from the ESP bridge (`dog_door_uno_bridge.yaml`).
 
 ## Clone (e.g. on the Raspberry Pi)
 
@@ -24,7 +24,7 @@ Follow **`pi/README.md`** for venv, `.env`, and systemd on the Pi.
 
 ## Home Assistant on the server (Portainer / Traefik)
 
-Copy [`deploy/portainer/docker-compose.yml`](deploy/portainer/docker-compose.yml) into a Portainer stack and set variables from [`deploy/portainer/.env.example`](deploy/portainer/.env.example). See [`deploy/portainer/README.md`](deploy/portainer/README.md) for Traefik labels, MQTT, and the [Eufy Security](https://github.com/fuatakgun/eufy_security) HACS integration pointing at the **`eufy-security-ws`** container.
+Copy [`deploy/portainer/docker-compose.yml`](deploy/portainer/docker-compose.yml) into a Portainer stack and set variables from [`deploy/portainer/.env.example`](deploy/portainer/.env.example). Enable optional Frigate (`COMPOSE_PROFILES=frigate`), add RTSP in [`deploy/portainer/frigate/config.yml.example`](deploy/portainer/frigate/config.yml.example), and optionally install HA package **[`deploy/portainer/homeassistant-packages/dog_door_frigate_schedules.yaml`](deploy/portainer/homeassistant-packages/dog_door_frigate_schedules.yaml)**. Full detail: **[`deploy/portainer/README.md`](deploy/portainer/README.md)** and **[`deploy/portainer/homeassistant-packages/README.md`](deploy/portainer/homeassistant-packages/README.md)**.
 
 ## Configuration notes
 

@@ -1,0 +1,45 @@
+# Copy to config.yml in this folder and set each camera's RTSP URL (Eufy NAS/RTSP).
+# Docs: https://docs.frigate.video/configuration/
+
+# Required for the HACS Frigate integration (MQTT topics under topic_prefix).
+# Home Assistant → MQTT: same broker — host mosquitto, port 1883 (see docker-compose.yml).
+mqtt:
+  enabled: true
+  host: mosquitto
+  port: 1883
+  topic_prefix: frigate
+
+detectors:
+  cpu:
+    type: cpu
+
+# Add one camera block per stream. Use a substream for detect if your camera provides one.
+
+cameras:
+  dog_door_cam:
+    ffmpeg:
+      inputs:
+        - path: rtsp://USER:PASSWORD@CAMERA_IP_OR_HOST/stream_path
+          input_args: preset-rtsp-generic
+          roles:
+            - detect
+    detect:
+      enabled: true
+      width: 640
+      height: 480
+      fps: 5
+    objects:
+      track:
+        - dog
+        - person
+      # Tune in real install: lower min_score if dog missed; raise min_area to reduce far/human false dogs
+      filters:
+        dog:
+          min_score: 0.4
+          min_area: 500
+
+record:
+  enabled: false
+
+snapshots:
+  enabled: true

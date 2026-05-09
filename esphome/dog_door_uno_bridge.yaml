@@ -1,0 +1,185 @@
+# ESPHome: ESP32 UART bridge → Arduino Uno (dog_door.ino SoftwareSerial @ 9600).
+# Flash: esphome compile dog_door_uno_bridge.yaml | esphome upload ... --device <IP>
+#
+# Electrical (read before wiring D7→ESP RX):
+#   Uno digital HIGH ≈ 5 V. ESP32 GPIO is 3.3 V — do NOT tie Uno D7 TX directly to ESP RX; use a
+#   logic level shifter or resistor divider. One-way ESP TX→Uno D8 RX is fine at 3.3 V.
+#   With a shifter connected, Uno can echo GET_STATE / PONG to ESP RX (Phase B: parse in ESPHome).
+#
+# Uno commands: CMD_OPEN, CMD_CLOSE, PING, GET_STATE, SET_OPEN_MS=, SET_CLOSE_MS=, SET_DWELL_MS=
+# (see dog_door/dog_door.ino). Timings persist in EEPROM on the Uno.
+
+substitutions:
+  name: dog-door-bridge
+  friendly_name: Dog door Uno bridge
+
+esphome:
+  name: ${name}
+  friendly_name: ${friendly_name}
+  min_version: "2024.6.0"
+
+esp32:
+  variant: esp32
+  board: esp32dev
+  framework:
+    type: esp-idf
+
+globals:
+  - id: bridge_action_count
+    type: uint32_t
+    restore_value: no
+    initial_value: "0"
+
+sensor:
+  - platform: template
+    name: "Bridge API press counter"
+    id: bridge_api_press_counter
+    entity_category: diagnostic
+    icon: "mdi:counter"
+    accuracy_decimals: 0
+    lambda: |-
+      return (float) id(bridge_action_count);
+    update_interval: 1s
+  - platform: wifi_signal
+    name: "Bridge WiFi signal"
+    update_interval: 60s
+    entity_category: diagnostic
+  - platform: uptime
+    name: "Bridge uptime"
+    entity_category: diagnostic
+
+logger:
+  level: DEBUG
+
+api:
+  encryption:
+    key: !secret api_encryption_key
+
+ota:
+  - platform: esphome
+
+web_server:
+  version: 3
+  port: 80
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+captive_portal:
+
+uart:
+  id: uart_uno
+  tx_pin: GPIO17
+  rx_pin: GPIO16
+  baud_rate: 9600
+  debug:
+    direction: BOTH
+    after:
+      timeout: 30ms
+    sequence:
+      - lambda: UARTDebug::log_hex(direction, bytes, ' ');
+
+number:
+  - platform: template
+    name: "Uno motor open time ms"
+    id: uno_open_ms
+    optimistic: true
+    initial_value: "3000"
+    min_value: 500
+    max_value: 120000
+    step: 100
+    mode: box
+    set_action:
+      - lambda: |-
+          char buf[48];
+          snprintf(buf, sizeof(buf), "SET_OPEN_MS=%d\n", (int) x);
+          id(uart_uno).write_array((const uint8_t *) buf, strlen(buf));
+  - platform: template
+    name: "Uno motor close time ms"
+    id: uno_close_ms
+    optimistic: true
+    initial_value: "3000"
+    min_value: 500
+    max_value: 120000
+    step: 100
+    mode: box
+    set_action:
+      - lambda: |-
+          char buf[48];
+          snprintf(buf, sizeof(buf), "SET_CLOSE_MS=%d\n", (int) x);
+          id(uart_uno).write_array((const uint8_t *) buf, strlen(buf));
+  - platform: template
+    name: "Uno door dwell time ms"
+    id: uno_dwell_ms
+    optimistic: true
+    initial_value: "8000"
+    min_value: 1000
+    max_value: 600000
+    step: 500
+    mode: box
+    set_action:
+      - lambda: |-
+          char buf[48];
+          snprintf(buf, sizeof(buf), "SET_DWELL_MS=%d\n", (int) x);
+          id(uart_uno).write_array((const uint8_t *) buf, strlen(buf));
+
+switch:
+  - platform: restart
+    name: "Bridge restart"
+    entity_category: config
+
+button:
+  - platform: template
+    name: "Dog door open"
+    on_press:
+      - lambda: id(bridge_action_count)++;
+      - logger.log:
+          format: "BRIDGE_EVT press=OPEN (HA→ESP API ran on_press)"
+          level: WARN
+      - logger.log:
+          format: "bridge send CMD_OPEN (+LF) → Uno D8 RX"
+          level: INFO
+      - uart.write:
+          id: uart_uno
+          data: "CMD_OPEN\n"
+
+  - platform: template
+    name: "Dog door close"
+    on_press:
+      - lambda: id(bridge_action_count)++;
+      - logger.log:
+          format: "BRIDGE_EVT press=CLOSE (HA→ESP API ran on_press)"
+          level: WARN
+      - logger.log:
+          format: "bridge send CMD_CLOSE (+LF)"
+          level: INFO
+      - uart.write:
+          id: uart_uno
+          data: "CMD_CLOSE\n"
+
+  - platform: template
+    name: "Dog door ping Uno"
+    on_press:
+      - lambda: id(bridge_action_count)++;
+      - logger.log:
+          format: "BRIDGE_EVT press=PING (HA→ESP API ran on_press)"
+          level: WARN
+      - logger.log:
+          format: "bridge send PING (+LF)"
+          level: INFO
+      - uart.write:
+          id: uart_uno
+          data: "PING\n"
+
+  - platform: template
+    name: "Dog door Uno GET_STATE"
+    entity_category: diagnostic
+    on_press:
+      - lambda: id(bridge_action_count)++;
+      - logger.log:
+          format: "BRIDGE send GET_STATE"
+          level: WARN
+      - uart.write:
+          id: uart_uno
+          data: "GET_STATE\n"

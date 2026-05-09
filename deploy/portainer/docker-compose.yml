@@ -1,4 +1,4 @@
-# Stack for Portainer: Home Assistant + internal MQTT + Eufy Security WebSocket bridge.
+# Stack for Portainer: Home Assistant + internal MQTT + optional Frigate (RTSP / dog detect).
 # 1) Create host directories for volumes (or set bind paths in .env / Portainer env).
 # 2) Add environment variables in Portainer (see .env.example).
 # 3) Traefik: create external network `traefik_proxy`, set TRAEFIK_DOMAIN_SUFFIX (and optional HA_SUBDOMAIN).
@@ -61,21 +61,18 @@ services:
         yq -i '.http.trusted_proxies = ["127.0.0.1", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]' "$$f"
         echo "OK: merged http.use_x_forwarded_for and http.trusted_proxies"
 
-  # Enable with Portainer env COMPOSE_PROFILES=eufy (or docker compose --profile eufy up -d)
-  eufy-security-ws:
+  # Enable with COMPOSE_PROFILES=frigate. Put config.yml next to this compose (./frigate/).
+  # Home Assistant → Frigate integration → http://frigate:5000
+  frigate:
     profiles:
-      - eufy
-    image: bropat/eufy-security-ws:latest
-    container_name: eufy-security-ws
+      - frigate
+    image: ghcr.io/blakeblackshear/frigate:stable
+    container_name: frigate
     restart: unless-stopped
-    environment:
-      USERNAME: ${EUFY_USERNAME}
-      PASSWORD: ${EUFY_PASSWORD}
-      COUNTRY: ${EUFY_COUNTRY:-US}
-      PORT: "3000"
-      LANGUAGE: ${EUFY_LANGUAGE:-en}
+    shm_size: "128mb"
     volumes:
-      - eufy_ws_data:/data
+      - ./frigate:/config
+      - frigate_media:/media/frigate
     networks:
       - dog_door_ha
 
@@ -89,4 +86,4 @@ volumes:
   ha_config:
   mosquitto_data:
   mosquitto_log:
-  eufy_ws_data:
+  frigate_media:

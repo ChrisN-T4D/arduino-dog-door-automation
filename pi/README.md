@@ -7,7 +7,7 @@ Python **FastAPI** app that:
 - Serves a small **web UI** (HTTP Basic auth): door status, remote open/close, optional SQLite **schedule rules** (reference for migration to Home Assistant).
 - Stores rules in **SQLite** under `pi/data/dog_door.db`.
 
-The Uno firmware no longer uses RFID or Pi heartbeats: the door opens **only** on explicit **`CMD_OPEN`**. Policy (time windows, mmWave, Eufy) belongs in **Home Assistant**.
+The Uno firmware no longer uses RFID or Pi heartbeats: the door opens **only** on explicit **`CMD_OPEN`**. Policy (time windows, mmWave, Frigate dog/person) belongs in **Home Assistant**.
 
 **Pi setup** below includes **Arduino CLI** so you can **compile and upload** `dog_door.ino` from the Pi over USB (e.g. after `git pull`) without a separate PC.
 

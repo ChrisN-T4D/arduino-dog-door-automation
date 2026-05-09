@@ -1,0 +1,96 @@
+# Dog door — mmWave trigger + Frigate dog check + HA Schedule windows.
+# Copy this file to HA: <config>/packages/dog_door_frigate_schedules.yaml
+#
+# configuration.yaml needs:
+#   homeassistant:
+#     packages: !include_dir_named packages/
+#
+# Tune entity IDs marked CHANGEME below. Frigate example camera name is dog_door_cam
+# (see deploy/portainer/frigate/config.yml.example) → occupancy entities:
+#   binary_sensor.dog_door_cam_dog_occupancy
+#   binary_sensor.dog_door_cam_person_occupancy
+
+input_boolean:
+  dog_door_mm_auto_open_enabled:
+    name: Dog door — mmWave automatic open enabled
+    icon: mdi:dog-side
+    initial: true
+
+  dog_door_block_auto_if_person:
+    name: Dog door — block auto-open while Frigate sees a person
+    icon: mdi:account-alert
+    initial: true
+
+timer:
+  dog_door_auto_open_cooldown:
+    duration: "00:01:30"
+
+# Add time slots in HA: Settings → Devices & services → Helpers → each schedule helper.
+schedule:
+  dog_door_allow_without_dog_detection:
+    name: Dog door — allow auto-open without dog (skip Frigate dog)
+
+  dog_door_block_automatic_opens:
+    name: Dog door — block automatic opens only
+
+script:
+  dog_door_press_bridge_open_button:
+    alias: Dog door — press ESP bridge “open”
+    sequence:
+      - service: button.press
+        target:
+          entity_id: button.dog_door_bridge_dog_door_open  # CHANGEME — your bridge button.*
+
+automation:
+  - id: dog_door_mm_frigate_schedule_auto_open
+    alias: Dog door — auto-open (mmWave + Frigate + schedules)
+    description: >
+      Block schedule overrides “allow without dog”. Manual dashboard buttons unchanged.
+      CHANGEME binary_sensor.mmwave_moving → your LD2410 motion entity from ESPHome.
+      CHANGEME button in script dog_door_press_bridge_open_button if needed.
+      Frigate entities assume camera id dog_door_cam in config.yml.
+    mode: single
+    max_exceeded: silent
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.mmwave_moving # CHANGEME
+        to: 'on'
+        for: '00:00:02'
+    condition:
+      - condition: state
+        entity_id: input_boolean.dog_door_mm_auto_open_enabled
+        state: 'on'
+      # Block-all-automatic-opens window — highest priority guard
+      - condition: state
+        entity_id: schedule.dog_door_block_automatic_opens
+        state: 'off'
+      - condition: state
+        entity_id: timer.dog_door_auto_open_cooldown
+        state: idle
+      # Optional safety — skip when person occupancy is strictly on.
+      - condition: or
+        conditions:
+          - condition: state
+            entity_id: input_boolean.dog_door_block_auto_if_person
+            state: 'off'
+          - condition: not
+            conditions:
+              - condition: state
+                entity_id: binary_sensor.dog_door_cam_person_occupancy
+                state: 'on'
+      # Allow-without-dog schedule OR dog detected now
+      - condition: or
+        conditions:
+          - condition: state
+            entity_id: schedule.dog_door_allow_without_dog_detection
+            state: 'on'
+          - condition: state
+            entity_id: binary_sensor.dog_door_cam_dog_occupancy
+            state: 'on'
+    action:
+      - service: script.turn_on
+        target:
+          entity_id: script.dog_door_press_bridge_open_button
+      - service: timer.start
+        target:
+          entity_id: timer.dog_door_auto_open_cooldown

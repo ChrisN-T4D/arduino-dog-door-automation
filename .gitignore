@@ -15,6 +15,9 @@ pi/data/
 # ESPHome — real keys / Wi-Fi live here; do not push to GitHub (example file is not ignored)
 esphome/secrets.yaml
 
+# Frigate — RTSP URLs and credentials (example: frigate/config.yml.example)
+deploy/portainer/frigate/config.yml
+
 # IDE / OS
 .cursor/
 .vscode/
